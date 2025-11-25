@@ -6,7 +6,7 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // mongodb
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 // middleware
 app.use(cors());
@@ -35,6 +35,7 @@ async function run() {
     // const usersCollection = db.collection('users');
 
     // parcels API endpoints would go here
+    // Get all parcels
     app.get('/parcels', async (req, res) => {
       // get all parcels
       const query = {};
@@ -44,15 +45,36 @@ async function run() {
       if (email) {
         query.senderEmail = email;
       }
+      // options for sorting
+      const options = {
+        // sort by createdAt in descending order
+        sort: { createdAt: -1 },
+      };
       // if there are query parameters, you can modify the query object accordingly
-      const cursor = parcelsCollection.find(query);
+      // for example, filtering by status, date range, etc.
+      const cursor = parcelsCollection.find(query, options);
       const parcels = await cursor.toArray();
       res.send(parcels);
     });
 
+    // Create a new parcel
     app.post('/parcels', async (req, res) => {
       const parcel = req.body;
+      //  add createdAt field with current date
+      parcel.createdAt = new Date();
       const result = await parcelsCollection.insertOne(parcel);
+      res.send(result);
+    });
+
+    // Delete a parcel by ID
+    app.delete('/parcels/:id', async (req, res) => {
+      // get the id from the request parameters
+      const id = req.params.id;
+      // create a query to find the parcel by its ObjectId
+      const query = { _id: new ObjectId(id) };
+
+      // delete the parcel
+      const result = await parcelsCollection.deleteOne(query);
       res.send(result);
     });
 
