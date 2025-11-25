@@ -57,6 +57,18 @@ async function run() {
       res.send(parcels);
     });
 
+    // Get a single parcel by ID
+    app.get('/parcels/:id', async (req, res) => {
+      // get the id from the request parameters
+      const id = req.params.id;
+      // create a query to find the parcel by its ObjectId
+      const query = { _id: new ObjectId(id) };
+
+      // find the parcel by its ObjectId
+      const parcel = await parcelsCollection.findOne(query);
+      res.send(parcel);
+    });
+
     // Create a new parcel
     app.post('/parcels', async (req, res) => {
       const parcel = req.body;
