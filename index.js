@@ -7,6 +7,15 @@ const app = express();
 const stripe = require('stripe')(process.env.STRIPE_SECRETE);
 const port = process.env.PORT || 5000;
 
+// creating tracking id for parcel
+const crypto = require('crypto');
+function generateTrackingId() {
+  const prefix = 'ZAP'; // your company short code
+  const randomBytes = crypto.randomBytes(4).toString('hex').toUpperCase(); // 8 chars
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return `${prefix}-${date}-${randomBytes}`;
+}
+
 // mongodb
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
@@ -35,6 +44,7 @@ async function run() {
     const db = client.db('zapShiftDB');
     const parcelsCollection = db.collection('parcels');
     // const usersCollection = db.collection('users');
+    const paymentCollection = db.collection('payments');
 
     // parcels API endpoints would go here
     // Get all parcels
@@ -93,6 +103,85 @@ async function run() {
     });
 
     // stripe payment api implement
+    app.post('/payment-checkout-session', async (req, res) => {
+      const paymentInfo = req.body;
+      const amount = parseInt(paymentInfo.cost) * 100;
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            // Provide the exact Price ID (for example, price_1234) of the product you want to sell
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: `Please Pay for ${paymentInfo.parcelName}`,
+              },
+              unit_amount: amount,
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        customer_email: paymentInfo.senderEmail,
+        metadata: {
+          parcelId: paymentInfo.parcelId,
+          parcelName: paymentInfo.parcelName,
+        },
+        success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
+      });
+
+      console.log(session);
+      res.send({ url: session.url });
+    });
+
+    // verify payment
+    app.patch('/payment-success', async (req, res) => {
+      const sessionId = req.query.session_id;
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      console.log('session retrieve', session);
+
+      // tracking id
+      const trackingId = generateTrackingId();
+      if (session.payment_status === 'paid') {
+        const id = session.metadata.parcelId;
+        const query = { _id: new ObjectId(id) };
+        const update = {
+          $set: {
+            paymentStatus: 'paid',
+            trackingId: trackingId,
+          },
+        };
+        const result = await parcelsCollection.updateOne(query, update);
+
+        const payment = {
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          customerEmail: session.customer_email,
+          parcelId: session.metadata.parcelId,
+          parcelName: session.metadata.parcelName,
+          transactionId: session.payment_intent,
+          paymentStatus: session.payment_status,
+          paidAt: new Date(),
+        };
+
+        if (session.payment_status === 'paid') {
+          const paymentResult = await paymentCollection.insertOne(payment);
+
+          res.send({
+            success: true,
+            modifyParcel: result,
+            paymentInfo: paymentResult,
+            transactionId: session.payment_intent,
+            trackingId: trackingId,
+          });
+        }
+        // res.send(result);
+      }
+
+      res.send({ success: false });
+    });
+
+    // old api
     app.post('/create-checkout-session', async (req, res) => {
       const paymentInfo = req.body;
       const amount = parseInt(paymentInfo.cost) * 100;
@@ -114,7 +203,7 @@ async function run() {
         ],
         customer_email: paymentInfo.senderEmail,
         mode: 'payment',
-        metaData: {
+        metadata: {
           parcelId: paymentInfo.parcelId,
         },
         success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success`,
