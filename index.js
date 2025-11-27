@@ -18,6 +18,7 @@ function generateTrackingId() {
 
 // mongodb
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const { send } = require('process');
 
 // middleware
 app.use(cors());
@@ -81,6 +82,19 @@ async function run() {
       res.send(parcel);
     });
 
+    // payment history
+    app.get('/payments', async (req, res) => {
+      const email = req.query.email;
+      const query = {};
+      if (email) {
+        query.customerEmail = email;
+      }
+
+      const cursor = paymentCollection.find(query);
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
     // Create a new parcel
     app.post('/parcels', async (req, res) => {
       const parcel = req.body;
@@ -99,6 +113,17 @@ async function run() {
 
       // delete the parcel
       const result = await parcelsCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    app.delete('/payments/:id', async (req, res) => {
+      // get the id from the request parameters
+      const id = req.params.id;
+      // create a query to find the parcel by its ObjectId
+      const query = { _id: new ObjectId(id) };
+
+      // delete the parcel
+      const result = await paymentCollection.deleteOne(query);
       res.send(result);
     });
 
