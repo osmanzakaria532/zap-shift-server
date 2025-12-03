@@ -77,8 +77,9 @@ async function run() {
     // Perform actions using the client here
     const db = client.db('zapShiftDB');
     const parcelsCollection = db.collection('parcels');
-    // const usersCollection = db.collection('users');
     const paymentCollection = db.collection('payments');
+    const usersCollection = db.collection('users');
+    const ridersCollection = db.collection('riders');
 
     // parcels API endpoints would go here
     // Get all parcels
@@ -131,7 +132,7 @@ async function run() {
         }
       }
 
-      const cursor = paymentCollection.find(query);
+      const cursor = paymentCollection.find(query).sort({ paidAt: -1 });
       const result = await cursor.toArray();
       res.send(result);
     });
@@ -293,6 +294,72 @@ async function run() {
       res.send({ url: session.url });
     });
 
+    // user api
+    app.post('/users', async (req, res) => {
+      const user = req.body;
+      user.role = 'user';
+      user.createdArt = new Date();
+      const email = user.email;
+
+      const userExist = await usersCollection.findOne({ email });
+
+      // check user email
+      if (userExist) {
+        return res.send({ message: 'user exist' });
+      }
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
+
+    // rider api
+
+    app.get('/riders', async (req, res) => {
+      // const query = { status: 'pending' };
+
+      const query = {};
+      // find specific data
+      if (req.query.status) {
+        query.status = req.query.status;
+      }
+      const cursor = ridersCollection.find(query);
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    app.post('/riders', async (req, res) => {
+      const rider = req.body;
+      rider.status = 'pending';
+      rider.createdAt = new Date();
+
+      const result = await ridersCollection.insertOne(rider);
+      res.send(result);
+    });
+
+    app.patch('/riders/:id', verifyFBToken, async (req, res) => {
+      const status = req.body.status;
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+
+      const updatedDoc = {
+        $set: {
+          status: status,
+        },
+      };
+
+      const result = await ridersCollection.updateOne(query, updatedDoc);
+      if (status === 'approved') {
+        const email = req.body.email;
+        const userQuery = { email };
+
+        const updateUser = {
+          $set: {
+            role: 'rider',
+          },
+        };
+        const userResult = await usersCollection.updateOne(userQuery, updateUser);
+      }
+      res.send(result);
+    });
     // Send a ping to confirm a successful connection
     // await client.db('admin').command({ ping: 1 });
     // console.log('Pinged your deployment. You successfully connected to MongoDB!');
