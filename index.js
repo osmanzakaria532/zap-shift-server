@@ -72,7 +72,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     // Perform actions using the client here
     const db = client.db('zapShiftDB');
@@ -80,6 +80,20 @@ async function run() {
     const paymentCollection = db.collection('payments');
     const usersCollection = db.collection('users');
     const ridersCollection = db.collection('riders');
+
+    // middleware to check user is admin or not
+    // must be used after verifyFBToken middleware
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+
+      if (!user || user.role !== 'admin') {
+        return res.status(403).send({ message: 'forbidden access' });
+      }
+
+      next();
+    };
 
     // parcels API endpoints would go here
     // Get all parcels
@@ -296,12 +310,25 @@ async function run() {
 
     // user api
 
+    // all users
     app.get('/users', verifyFBToken, async (req, res) => {
-      const cursor = usersCollection.find();
+      const search = req.query.search;
+      const query = {};
+      if (search) {
+        // query.displayName = { $regex: search, $options: 'i' };
+
+        // partial matching search input
+        query.$or = [
+          { displayName: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } },
+        ];
+      }
+      const cursor = usersCollection.find(query).sort({ createdArt: -1 }).limit(5);
       const result = await cursor.toArray();
       res.send(result);
     });
 
+    // add  user
     app.post('/users', async (req, res) => {
       const user = req.body;
       user.role = 'user';
@@ -318,7 +345,8 @@ async function run() {
       res.send(result);
     });
 
-    app.patch('/users/:id', async (req, res) => {
+    // update user
+    app.patch('/users/:id/role', verifyFBToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const roleInfo = req.body;
       const query = { _id: new ObjectId(id) };
@@ -330,6 +358,17 @@ async function run() {
 
       const result = await usersCollection.updateOne(query, updatedDoc);
       res.send(result);
+    });
+
+    // specific user by the ID
+    app.get('/users/:id', async (req, res) => {});
+
+    // check user if he admin or not
+    app.get('/users/:email/role', async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      res.send({ role: user?.role || 'user' });
     });
 
     // rider api
@@ -356,7 +395,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch('/riders/:id', verifyFBToken, async (req, res) => {
+    app.patch('/riders/:id/role', verifyFBToken, async (req, res) => {
       const status = req.body.status;
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -382,8 +421,8 @@ async function run() {
       res.send(result);
     });
     // Send a ping to confirm a successful connection
-    await client.db('admin').command({ ping: 1 });
-    console.log('Pinged your deployment. You successfully connected to MongoDB!');
+    // await client.db('admin').command({ ping: 1 });
+    // console.log('Pinged your deployment. You successfully connected to MongoDB!');
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
