@@ -72,7 +72,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    // await client.connect();
+    await client.connect();
 
     // Perform actions using the client here
     const db = client.db('zapShiftDB');
@@ -295,6 +295,13 @@ async function run() {
     });
 
     // user api
+
+    app.get('/users', verifyFBToken, async (req, res) => {
+      const cursor = usersCollection.find();
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
     app.post('/users', async (req, res) => {
       const user = req.body;
       user.role = 'user';
@@ -308,6 +315,20 @@ async function run() {
         return res.send({ message: 'user exist' });
       }
       const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
+
+    app.patch('/users/:id', async (req, res) => {
+      const id = req.params.id;
+      const roleInfo = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          role: roleInfo.role,
+        },
+      };
+
+      const result = await usersCollection.updateOne(query, updatedDoc);
       res.send(result);
     });
 
@@ -361,8 +382,8 @@ async function run() {
       res.send(result);
     });
     // Send a ping to confirm a successful connection
-    // await client.db('admin').command({ ping: 1 });
-    // console.log('Pinged your deployment. You successfully connected to MongoDB!');
+    await client.db('admin').command({ ping: 1 });
+    console.log('Pinged your deployment. You successfully connected to MongoDB!');
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
