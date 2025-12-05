@@ -25,7 +25,8 @@ app.use(cors());
 app.use(express.json());
 
 const admin = require('firebase-admin');
-const serviceAccount = require('./zap-shift-authentication-firebase-adminsdk.json');
+// const serviceAccount = require('./zap-shift-authentication-firebase-adminsdk.json');
+const serviceAccount = require(process.env.FIREBASE_CONFIG);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
