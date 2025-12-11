@@ -31,7 +31,11 @@ app.use(cors());
 // );
 
 const admin = require('firebase-admin');
-const serviceAccount = require('./zap-shift-authentication-firebase-adminsdk.json');
+
+const decoded = Buffer.from(process.env.FIREBASE_SERVICE_KEY, 'base64').toString('utf8');
+const serviceAccount = JSON.parse(decoded);
+
+// const serviceAccount = require('/zap-shift-authentication-firebase-adminsdk.json');
 // const { initializeApp } = require('firebase/app'); // Node.js Firebase
 // const serviceAccount = JSON.parse(process.env.FIREBASE_CONFIG);
 
@@ -124,33 +128,65 @@ async function run() {
       res.send(result);
     });
 
-    // parcels API endpoints would go here
+    // parcels API endpoints would go here ---------------------------------------------------------------
     // Get all parcels
     app.get('/parcels', async (req, res) => {
-      // get all parcels
-      const query = {};
-      // check email and deliveryStatus for query parameters
       const { email, deliveryStatus } = req.query;
-      // if email is provided, filter parcels by senderEmail
-      if (email) {
-        query.senderEmail = email;
-      }
+      const query = {};
 
-      //
+      if (!email) {
+        return res.status(400).send({ message: 'User email is required' });
+      }
+      query.senderEmail = email;
+
+      // If deliveryStatus filter is provided
       if (deliveryStatus) {
         query.deliveryStatus = deliveryStatus;
       }
 
-      // options for sorting
+      // Sorting option: newest parcels first
       const options = {
-        // sort by createdAt in descending order
         sort: { createdAt: -1 },
       };
-      // if there are query parameters, you can modify the query object accordingly
-      // for example, filtering by status, date range, etc.
+
+      // Fetch data from MongoDB
       const cursor = parcelsCollection.find(query, options);
       const parcels = await cursor.toArray();
+
+      // Send parcels to client
       res.send(parcels);
+    });
+
+    // Get all parcels for admin
+    app.get('/parcels/admin', async (req, res) => {
+      const { deliveryStatus } = req.query;
+      const query = {};
+
+      if (deliveryStatus) {
+        query.deliveryStatus = deliveryStatus;
+      }
+
+      const options = { sort: { createdAt: -1 } };
+      const parcels = await parcelsCollection.find(query, options).toArray();
+
+      res.send(parcels);
+    });
+
+    app.get('/parcels/rider', async (req, res) => {
+      const { riderEmail, deliveryStatus } = req.query;
+      const query = {};
+      if (riderEmail) {
+        query.riderEmail = riderEmail;
+      }
+
+      if (deliveryStatus) {
+        // query.deliveryStatus = { $in: ['driver-assigned', 'rider-arriving'] };
+        query.deliveryStatus = { $nin: ['parcel-delivered'] };
+      }
+
+      const cursor = parcelsCollection.find(query);
+      const result = await cursor.toArray();
+      res.send(result);
     });
 
     // Get a single parcel by ID
@@ -201,6 +237,18 @@ async function run() {
       res.send(riderResult);
     });
 
+    app.patch('/parcels/:id/status', async (req, res) => {
+      const { deliveryStatus } = req.body;
+      const query = { _id: new ObjectId(req.params.id) };
+      const updatedDoc = {
+        $set: {
+          deliveryStatus: deliveryStatus,
+        },
+      };
+      const result = await parcelsCollection.updateOne(query, updatedDoc);
+      res.send(result);
+    });
+
     // Delete a parcel by ID
     app.delete('/parcels/:id', async (req, res) => {
       // get the id from the request parameters
@@ -213,7 +261,7 @@ async function run() {
       res.send(result);
     });
 
-    // stripe payment api implement
+    // stripe payment api implement -----------------------------------------------------------------------------------------
     app.post('/payment-checkout-session', async (req, res) => {
       const paymentInfo = req.body;
       const amount = parseInt(paymentInfo.cost) * 100;
@@ -412,34 +460,65 @@ async function run() {
     app.get('/users', verifyFBToken, async (req, res) => {
       const search = req.query.search;
       const query = {};
+
       if (search) {
         // query.displayName = { $regex: search, $options: 'i' };
-
-        // partial matching search input
         query.$or = [
           { displayName: { $regex: search, $options: 'i' } },
           { email: { $regex: search, $options: 'i' } },
+          { region: { $regex: search, $options: 'i' } },
+          { district: { $regex: search, $options: 'i' } },
         ];
       }
-      const cursor = usersCollection.find(query).sort({ createdArt: -1 }).limit(5);
+      const cursor = usersCollection.find(query).sort({ createdArt: -1 });
       const result = await cursor.toArray();
-      res.send(result);
+
+      // Main admin / owner email ( owner email)
+      const adminEmail = 'osmanzakaria801@gmail.com';
+
+      const sortedResult = result.sort((a, b) => {
+        if (a.email === adminEmail) return -1; // main admin upore
+        if (b.email === adminEmail) return 1;
+
+        if (a.role === 'admin' && b.role !== 'admin') return -1; // admin upore normal user
+        if (b.role === 'admin' && a.role !== 'admin') return 1;
+
+        // Normal user / admin -> newest first
+        return new Date(b.createdArt) - new Date(a.createdArt);
+      });
+
+      res.send(sortedResult);
     });
 
     // add  user
     app.post('/users', async (req, res) => {
       const user = req.body;
+      const { email, displayName, region, district, photoURL } = user;
       user.role = 'user';
       user.createdArt = new Date();
-      const email = user.email;
 
-      const userExist = await usersCollection.findOne({ email });
+      if (!email || !displayName || !region || !district) {
+        return res.send({ message: 'Missing required fields' });
+      }
 
       // check user email
+      const userExist = await usersCollection.findOne({ email });
       if (userExist) {
         return res.send({ message: 'user exist' });
       }
-      const result = await usersCollection.insertOne(user);
+
+      // user data to insert in DB
+      const userDataToInsertInDB = {
+        email,
+        displayName,
+        region,
+        district,
+        photoURL,
+        role: user.role,
+        createdArt: user.createdArt,
+      };
+
+      const result = await usersCollection.insertOne(userDataToInsertInDB);
       res.send(result);
     });
 
@@ -469,7 +548,14 @@ async function run() {
       res.send({ role: user?.role || 'user' });
     });
 
-    // rider api
+    app.delete('/users/:id/delete', async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await usersCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    // rider api ------------------------------------------------------------------------------------
 
     app.get('/riders', async (req, res) => {
       // const query = { status: 'pending' };
@@ -487,7 +573,7 @@ async function run() {
         query.workStatus = workStatus;
       }
 
-      const cursor = ridersCollection.find(query);
+      const cursor = ridersCollection.find(query).sort({ createdAt: -1 });
       const result = await cursor.toArray();
       res.send(result);
     });
@@ -514,7 +600,6 @@ async function run() {
           workStatus: 'available', // 👉 approve হলে এখন থেকেই কাজ করতে পারবে
         },
       };
-
       // 👉 riders collection-এ update
       const result = await ridersCollection.updateOne(query, updatedDoc);
 
@@ -532,6 +617,20 @@ async function run() {
       }
       // 👉 update result client-এ পাঠানো
       res.send(result);
+    });
+
+    app.delete('/riders/:id/delete', async (req, res) => {
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+
+        const result = await ridersCollection.deleteOne(query);
+
+        res.send(result); // { deletedCount: 1 } if deleted, { deletedCount: 0 } if not found
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: 'Failed to delete rider', error });
+      }
     });
 
     // Send a ping to confirm a successful connection
