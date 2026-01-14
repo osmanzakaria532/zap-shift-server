@@ -2,3 +2,6 @@ node_modules
 .env
 zap-shift-authentication-firebase-adminsdk.json
 .vercel
+.DS_Store
+.idea
+.vscode
