@@ -131,29 +131,25 @@ async function run() {
     // parcels API endpoints would go here ---------------------------------------------------------------
     // Get all parcels
     app.get('/parcels', async (req, res) => {
-      const { email, deliveryStatus } = req.query;
+      const { email, role, deliveryStatus } = req.query;
       const query = {};
 
-      if (!email) {
-        return res.status(400).send({ message: 'User email is required' });
+      if (role === 'user') {
+        query.senderEmail = email;
       }
-      query.senderEmail = email;
 
-      // If deliveryStatus filter is provided
+      if (role === 'rider') {
+        if (!email) return res.status(400).send({ message: 'Rider email required' });
+        query.riderEmail = email; // Rider শুধু তার parcels
+      }
+      // Admin: role=admin হলে সব parcels দেখাবে, query empty থাকলে সব দেখাবে
+
       if (deliveryStatus) {
         query.deliveryStatus = deliveryStatus;
       }
 
-      // Sorting option: newest parcels first
-      const options = {
-        sort: { createdAt: -1 },
-      };
+      const parcels = await parcelsCollection.find(query).sort({ createdAt: -1 }).toArray();
 
-      // Fetch data from MongoDB
-      const cursor = parcelsCollection.find(query, options);
-      const parcels = await cursor.toArray();
-
-      // Send parcels to client
       res.send(parcels);
     });
 
@@ -466,6 +462,7 @@ async function run() {
         query.$or = [
           { displayName: { $regex: search, $options: 'i' } },
           { email: { $regex: search, $options: 'i' } },
+          { role: { $regex: search, $options: 'i' } },
           { region: { $regex: search, $options: 'i' } },
           { district: { $regex: search, $options: 'i' } },
         ];
@@ -567,7 +564,8 @@ async function run() {
         query.status = status;
       }
       if (riderDistrict) {
-        query.riderDistrict = riderDistrict;
+        query.riderDistrict = { $regex: new RegExp(`^${riderDistrict}$`, 'i') };
+        // case-insensitive match
       }
       if (workStatus) {
         query.workStatus = workStatus;
