@@ -13,6 +13,15 @@ app.use(cors());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.daqctd4.mongodb.net/?appName=Cluster0`;
 
+// creating tracking id for parcel
+const crypto = require('crypto');
+function generateTrackingId() {
+  const prefix = 'ZAP'; // your company short code
+  const randomBytes = crypto.randomBytes(4).toString('hex').toUpperCase(); // 8 chars
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return `${prefix}-${date}-${randomBytes}`;
+}
+
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
@@ -102,7 +111,7 @@ async function run() {
         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
       });
 
-      console.log(session);
+      //   console.log(session);
 
       res.send({ url: session.url });
     });
@@ -133,7 +142,7 @@ async function run() {
         cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
       });
 
-      console.log(session);
+      //   console.log(session);
       res.send({ url: session.url });
     });
 
@@ -141,13 +150,16 @@ async function run() {
     app.patch('/payment-success', async (req, res) => {
       const sessionId = req.query.session_id;
       const session = await stripe.checkout.sessions.retrieve(sessionId);
-      console.log('session', session);
+
+      const trackingId = generateTrackingId();
+
       if (session.payment_status === 'paid') {
         const id = session.metadata.parcelId;
         const query = { _id: new ObjectId(id) };
         const update = {
           $set: {
             paymentStatus: 'paid',
+            trackingId: trackingId,
           },
         };
         const result = await parcelsCollection.updateOne(query, update);
@@ -162,14 +174,16 @@ async function run() {
           transactionId: session.payment_intent,
           paymentStatus: session.payment_status,
           paidAt: new Date(),
-          //   trackingId: ``,
         };
 
         if (session.payment_status === 'paid') {
           const paymentResult = await paymentCollection.insertOne(payment);
+          //   console.log(paymentResult);
           res.send({
             success: true,
             modifyParcel: result,
+            trackingId: trackingId,
+            transactionId: session.payment_intent,
             paymentInfo: paymentResult,
           });
         }
