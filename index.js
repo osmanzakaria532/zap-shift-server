@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
+// Payment Connection
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
@@ -44,6 +46,13 @@ async function run() {
 
       const cursor = parcelsCollection.find(query, options);
       const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    app.get('/parcels/:id', async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await parcelsCollection.findOne(query);
       res.send(result);
     });
 
