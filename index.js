@@ -11,7 +11,32 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 app.use(express.json());
 app.use(cors());
 
+// Firebase Admin SDK Initialization
+const admin = require('firebase-admin');
+const serviceAccount = require('./zap-shift-authentication-adminsdk.json');
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.daqctd4.mongodb.net/?appName=Cluster0`;
+
+// JWT implementation will be added here
+const verifyFBToken = async (req, res, next) => {
+  //   console.log('Hitting verifyFBToken', req.headers.authorization);
+  const token = req.headers?.authorization;
+  if (!token) {
+    return res.status(401).send({ message: 'unauthorized access' });
+  }
+  try {
+    const idToken = token.split(' ')[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    console.log('Decoded Token:', decoded);
+    req.decoded_email = decoded.email;
+    next();
+  } catch (error) {
+    return res.status(401).send({ message: 'unauthorized access' });
+  }
+};
 
 // creating tracking id for parcel
 const crypto = require('crypto');
@@ -192,7 +217,7 @@ async function run() {
         if (session.payment_status === 'paid') {
           const paymentResult = await paymentCollection.insertOne(payment);
           //   console.log(paymentResult);
-          res.send({
+          return res.send({
             success: true,
             modifyParcel: result,
             trackingId: trackingId,
@@ -205,11 +230,19 @@ async function run() {
       res.send({ success: false });
     });
 
-    app.get('/payments', async (req, res) => {
+    app.get('/payments', verifyFBToken, async (req, res) => {
       const email = req.query.email;
       const query = {};
+
+      //   console.log('headers', req.headers);
       if (email) {
         query.customerEmail = email;
+
+        // check email address
+        const decodedEmail = req.decoded_email;
+        if (email !== decodedEmail) {
+          return res.status(403).send({ message: 'forbidden access' });
+        }
       }
       const cursor = paymentCollection.find(query);
       const result = await cursor.toArray();
