@@ -66,8 +66,18 @@ async function run() {
     // await client.connect();
 
     const db = client.db('zap_shift_db');
+    const userCollection = db.collection('users');
     const parcelsCollection = db.collection('parcels');
     const paymentCollection = db.collection('payments');
+
+    // user related apis
+    app.post('/users', async (req, res) => {
+      const user = req.body;
+      user.role = 'user';
+      user.createdAt = new Date();
+      const result = await userCollection.insertOne(user);
+      res.send(result);
+    });
 
     // parcels api
     app.get('/parcels', async (req, res) => {
