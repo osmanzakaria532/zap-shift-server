@@ -71,12 +71,53 @@ async function run() {
     const paymentCollection = db.collection('payments');
 
     // user related apis
+
+    app.get('/users', async (req, res) => {
+      const cursor = userCollection.find();
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
     app.post('/users', async (req, res) => {
+      console.log('User API hit', req.body); // 👈 add this
       const user = req.body;
       user.role = 'user';
       user.createdAt = new Date();
+
+      const email = user.email;
+      const userExists = await userCollection.findOne({ email });
+      if (userExists) {
+        return res.send({ message: 'user already exists' });
+      }
+
       const result = await userCollection.insertOne(user);
       res.send(result);
+    });
+
+    // PATCH /users/:email - update region & district
+    app.patch('/users/:email', async (req, res) => {
+      const email = req.params.email;
+      const { region, district } = req.body;
+
+      console.log('Update Profile API hit', { email, region, district });
+
+      // check if data provided
+      if (!region || !district) {
+        return res.status(400).send({ error: 'Region and District are required' });
+      }
+
+      try {
+        const userExists = await userCollection.findOne({ email });
+        if (!userExists) {
+          return res.status(404).send({ error: 'User not found' });
+        }
+
+        const result = await userCollection.updateOne({ email }, { $set: { region, district } });
+        res.send({ message: 'User profile updated successfully', result });
+      } catch (err) {
+        console.log('Error updating user', err);
+        res.status(500).send({ error: 'Server error' });
+      }
     });
 
     // parcels api
