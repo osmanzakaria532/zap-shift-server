@@ -69,6 +69,7 @@ async function run() {
     const userCollection = db.collection('users');
     const parcelsCollection = db.collection('parcels');
     const paymentCollection = db.collection('payments');
+    const ridersCollection = db.collection('riders');
 
     // user related apis
 
@@ -118,6 +119,16 @@ async function run() {
         console.log('Error updating user', err);
         res.status(500).send({ error: 'Server error' });
       }
+    });
+
+    // Riders related apis will be added here
+    app.post('/riders', async (req, res) => {
+      const rider = req.body;
+      rider.status = 'pending';
+      rider.createdAt = new Date();
+
+      const result = await ridersCollection.insertOne(rider);
+      res.send(result);
     });
 
     // parcels api
