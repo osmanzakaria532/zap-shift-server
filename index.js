@@ -40,6 +40,7 @@ const verifyFBToken = async (req, res, next) => {
 
 // creating tracking id for parcel
 const crypto = require('crypto');
+const e = require('express');
 function generateTrackingId() {
   const prefix = 'ZAP'; // your company short code
   const randomBytes = crypto.randomBytes(4).toString('hex').toUpperCase(); // 8 chars
@@ -74,7 +75,13 @@ async function run() {
     // user related apis
 
     app.get('/users', async (req, res) => {
-      const cursor = userCollection.find();
+      const query = {};
+      const { email } = req.query;
+      if (email) {
+        query.email = email;
+      }
+      const option = { sort: { createdAt: -1 } };
+      const cursor = userCollection.find(query, option);
       const result = await cursor.toArray();
       res.send(result);
     });
@@ -102,7 +109,7 @@ async function run() {
 
       console.log('Update Profile API hit', { email, region, district });
 
-      // check if data provided
+      // check if data provided For Login Social profile
       if (!region || !district) {
         return res.status(400).send({ error: 'Region and District are required' });
       }
@@ -121,6 +128,13 @@ async function run() {
       }
     });
 
+    app.delete('/users/:id', verifyFBToken, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await userCollection.deleteOne(query);
+      res.send(result);
+    });
+
     // Riders related apis will be added here
     app.get('/riders', async (req, res) => {
       const query = {};
@@ -135,10 +149,66 @@ async function run() {
 
     app.post('/riders', async (req, res) => {
       const rider = req.body;
+
+      // Rider Created Time & Status
+      // rider.riderEmail = req.user.email;
       rider.status = 'pending';
       rider.createdAt = new Date();
 
       const result = await ridersCollection.insertOne(rider);
+      res.send(result);
+    });
+
+    app.patch('/riders/:id', verifyFBToken, async (req, res) => {
+      const status = req.body.status;
+      console.log('STATUS:', status);
+      const id = req.params.id;
+
+      // find the rider
+      const query = { _id: new ObjectId(id) };
+      const rider = await ridersCollection.findOne(query);
+      console.log('RIDER EMAIL:', rider.email);
+      if (!rider) {
+        return res.status(404).send({ message: 'Rider not found' });
+      }
+
+      const updatedDoc = {
+        $set: { status: status },
+      };
+      const result = await ridersCollection.updateOne(query, updatedDoc);
+
+      // Approval
+      if (status === 'approved') {
+        const email = req.body.email;
+        console.log(email);
+
+        const userQuery = { email: email };
+        const updatedUser = {
+          $set: { role: 'rider' },
+        };
+        const userResult = await userCollection.updateOne(userQuery, updatedUser);
+        console.log('USER UPDATE:', userResult);
+      }
+
+      // Rejection
+      if (status === 'rejected') {
+        const email = req.body.email;
+        console.log(email);
+        const userQuery = { email: email };
+        const updatedUser = {
+          $set: { role: 'user' },
+        };
+        const userResult = await userCollection.updateOne(userQuery, updatedUser);
+        console.log('USER UPDATE:', userResult);
+      }
+
+      res.send(result);
+    });
+
+    app.delete('/riders/:id', verifyFBToken, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await ridersCollection.deleteOne(query);
       res.send(result);
     });
 
@@ -319,6 +389,13 @@ async function run() {
       }
       const cursor = paymentCollection.find(query);
       const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    app.delete('/payments/:id', async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await paymentCollection.deleteOne(query);
       res.send(result);
     });
 
