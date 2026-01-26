@@ -61,6 +61,8 @@ app.get('/', (req, res) => {
   res.send('Zap Shift Server is Running!');
 });
 
+const PERMANENT_ADMIN_EMAIL = 'osmanzakaria801@gmail.com';
+
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
@@ -75,15 +77,24 @@ async function run() {
     // user related apis
 
     app.get('/users', async (req, res) => {
-      const query = {};
       const { email } = req.query;
+      const query = {};
       if (email) {
         query.email = email;
       }
-      const option = { sort: { createdAt: -1 } };
-      const cursor = userCollection.find(query, option);
-      const result = await cursor.toArray();
-      res.send(result);
+
+      // সব user fetch
+      const users = await userCollection.find(query).toArray();
+
+      // Permanent admin কে top এ নিয়ে আসা
+      const sortedUsers = users.sort((a, b) => {
+        if (a.email === PERMANENT_ADMIN_EMAIL) return -1; // top
+        if (b.email === PERMANENT_ADMIN_EMAIL) return 1;
+        // baki gula createdAt descending
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      });
+
+      res.send(sortedUsers);
     });
 
     app.post('/users', async (req, res) => {
@@ -91,6 +102,13 @@ async function run() {
       const user = req.body;
       user.role = 'user';
       user.createdAt = new Date();
+
+      // 🔒 Permanent admin force
+      if (user.email === PERMANENT_ADMIN_EMAIL) {
+        user.role = 'admin';
+      } else {
+        user.role = 'user';
+      }
 
       const email = user.email;
       const userExists = await userCollection.findOne({ email });
@@ -102,7 +120,7 @@ async function run() {
       res.send(result);
     });
 
-    // PATCH /users/:email - update region & district
+    // PATCH /users/:email - update region & district if logged in via social login
     app.patch('/users/:email', async (req, res) => {
       const email = req.params.email;
       const { region, district } = req.body;
@@ -128,9 +146,39 @@ async function run() {
       }
     });
 
+    app.patch('/users-role/:id', async (req, res) => {
+      const id = req.params.id;
+      const { roleInfo, email } = req.body; // email: currently logged-in user
+      const query = { _id: new ObjectId(id) };
+
+      // 🔒 Permanent admin cannot change
+      if (email === PERMANENT_ADMIN_EMAIL) {
+        return res.status(403).send({
+          message: 'Permanent admin role cannot be changed',
+        });
+      }
+
+      const updatedDoc = {
+        $set: {
+          role: roleInfo.role,
+        },
+      };
+      const result = await userCollection.updateOne(query, updatedDoc);
+      res.send(result);
+    });
+
     app.delete('/users/:id', verifyFBToken, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
+
+      // 🔒 Permanent admin protection
+      const userToDelete = await userCollection.findOne(query);
+      if (userToDelete?.email === PERMANENT_ADMIN_EMAIL) {
+        return res.status(403).send({
+          message: 'This admin cannot be removed',
+        });
+      }
+
       const result = await userCollection.deleteOne(query);
       res.send(result);
     });
