@@ -97,6 +97,13 @@ async function run() {
       res.send(sortedUsers);
     });
 
+    app.get('/users/:email/role', async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const user = await userCollection.findOne(query);
+      res.send({ role: user?.role || 'user' });
+    });
+
     app.post('/users', async (req, res) => {
       console.log('User API hit', req.body); // 👈 add this
       const user = req.body;
