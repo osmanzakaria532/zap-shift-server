@@ -61,7 +61,7 @@ app.get('/', (req, res) => {
   res.send('Zap Shift Server is Running!');
 });
 
-const PERMANENT_ADMIN_EMAIL = 'osmanzakaria801@gmail.com';
+// const PERMANENT_ADMIN_EMAIL = 'osmanzakaria801@gmail.com';
 
 async function run() {
   try {
@@ -77,34 +77,51 @@ async function run() {
     // middleware for Admin check
     const verifyAdmin = async (req, res, next) => {
       const email = req.decoded_email;
-      // const query = { email: email };
-      // const user = await userCollection.findOne(query);
-      // if (user?.role !== 'admin') {
-      //   return res.status(403).send({ message: 'forbidden access' });
-      // }
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      if (!user || user?.role !== 'admin') {
+        return res.status(403).send({ message: 'forbidden access' });
+      }
       next();
     };
 
     // user related apis
 
     app.get('/users', async (req, res) => {
-      const { email } = req.query;
+      const { email, search } = req.query;
       const query = {};
       if (email) {
         query.email = email;
       }
 
-      // সব user fetch
-      const users = await userCollection.find(query).toArray();
+      // search functionality
+      if (search) {
+        // query.displayName = search;
+        query.$or = [
+          { displayName: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } },
+          { role: { $regex: search, $options: 'i' } },
+        ];
+      }
 
-      // Permanent admin কে top এ নিয়ে আসা
+      // সব user fetch
+      const users = await userCollection.find(query).limit(5).toArray();
+
+      // Permanent admin কে top এ নিয়ে আসা
+      // const sortedUsers = users.sort((a, b) => {
+      //   if (a.email === PERMANENT_ADMIN_EMAIL) return -1; // top
+      //   if (b.email === PERMANENT_ADMIN_EMAIL) return 1;
+      // baki gula createdAt descending
+      //   return new Date(b.createdAt) - new Date(a.createdAt);
+      // });
+      // res.send(sortedUsers);
+
       const sortedUsers = users.sort((a, b) => {
-        if (a.email === PERMANENT_ADMIN_EMAIL) return -1; // top
-        if (b.email === PERMANENT_ADMIN_EMAIL) return 1;
-        // baki gula createdAt descending
+        if (a.email === 'osmanzakaria801@gmail.com') return -1; // top
+        if (b.email === 'osmanzakaria801@gmail.com') return 1;
+        // others createdAt descending
         return new Date(b.createdAt) - new Date(a.createdAt);
       });
-
       res.send(sortedUsers);
     });
 
@@ -122,11 +139,11 @@ async function run() {
       user.createdAt = new Date();
 
       // 🔒 Permanent admin force
-      if (user.email === PERMANENT_ADMIN_EMAIL) {
-        user.role = 'admin';
-      } else {
-        user.role = 'user';
-      }
+      // if (user.email === PERMANENT_ADMIN_EMAIL) {
+      //   user.role = 'admin';
+      // } else {
+      //   user.role = 'user';
+      // }
 
       const email = user.email;
       const userExists = await userCollection.findOne({ email });
@@ -170,11 +187,11 @@ async function run() {
       const query = { _id: new ObjectId(id) };
 
       // 🔒 Permanent admin cannot change
-      if (email === PERMANENT_ADMIN_EMAIL) {
-        return res.status(403).send({
-          message: 'Permanent admin role cannot be changed',
-        });
-      }
+      // if (email === PERMANENT_ADMIN_EMAIL) {
+      //   return res.status(403).send({
+      //     message: 'Permanent admin role cannot be changed',
+      //   });
+      // }
 
       const updatedDoc = {
         $set: {
@@ -185,17 +202,17 @@ async function run() {
       res.send(result);
     });
 
-    app.delete('/users/:id', verifyFBToken, async (req, res) => {
+    app.delete('/users/:id', verifyFBToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
 
       // 🔒 Permanent admin protection
-      const userToDelete = await userCollection.findOne(query);
-      if (userToDelete?.email === PERMANENT_ADMIN_EMAIL) {
-        return res.status(403).send({
-          message: 'This admin cannot be removed',
-        });
-      }
+      // const userToDelete = await userCollection.findOne(query);
+      // if (userToDelete?.email === PERMANENT_ADMIN_EMAIL) {
+      //   return res.status(403).send({
+      //     message: 'This admin cannot be removed',
+      //   });
+      // }
 
       const result = await userCollection.deleteOne(query);
       res.send(result);
@@ -225,7 +242,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch('/riders/:id', verifyFBToken, async (req, res) => {
+    app.patch('/riders/:id', verifyFBToken, verifyAdmin, async (req, res) => {
       const status = req.body.status;
       console.log('STATUS:', status);
       const id = req.params.id;
