@@ -105,7 +105,7 @@ async function run() {
       }
 
       // সব user fetch
-      const users = await userCollection.find(query).limit(5).toArray();
+      const users = await userCollection.find(query).toArray();
 
       // Permanent admin কে top এ নিয়ে আসা
       // const sortedUsers = users.sort((a, b) => {
@@ -225,7 +225,8 @@ async function run() {
         query.status = req.query.status;
       }
 
-      const cursor = ridersCollection.find(query);
+      const options = { sort: { createdAt: -1 } };
+      const cursor = ridersCollection.find(query, options);
       const result = await cursor.toArray();
       res.send(result);
     });
@@ -298,9 +299,26 @@ async function run() {
     // parcels api
     app.get('/parcels', async (req, res) => {
       const query = {};
-      const { email } = req.query;
+      const { email, deliveryStatus, search } = req.query;
       if (email) {
         query.senderEmail = email;
+      }
+
+      if (deliveryStatus) {
+        query.deliveryStatus = deliveryStatus;
+      }
+
+      // search functionality
+      if (search) {
+        // query.displayName = search;
+        // query.paymentStatus = search;
+        const cleanSearch = search.replace(/\s+/g, '-').toLowerCase(); // replace spaces with - if needed
+        query.$or = [
+          { senderName: { $regex: search, $options: 'i' } },
+          { senderEmail: { $regex: search, $options: 'i' } },
+          { paymentStatus: { $regex: cleanSearch, $options: 'i' } },
+          { deliveryStatus: { $regex: cleanSearch, $options: 'i' } },
+        ];
       }
 
       const options = { sort: { createdAt: -1 } };
@@ -369,6 +387,7 @@ async function run() {
 
     // ---> Second api ( second process )
     app.post('/payment-checkout-session', async (req, res) => {
+      const frontendUrl = req.body.frontendUrl || process.env.SITE_DOMAIN;
       const paymentInfo = req.body;
       const amount = parseInt(paymentInfo.cost) * 100;
       const session = await stripe.checkout.sessions.create({
@@ -389,8 +408,10 @@ async function run() {
         metadata: {
           parcelId: paymentInfo.parcelId,
         },
-        success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
+        // success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        // cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancelled`,
+        success_url: `${frontendUrl}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${frontendUrl}/dashboard/payment-cancelled`,
       });
 
       //   console.log(session);
@@ -422,6 +443,7 @@ async function run() {
         const update = {
           $set: {
             paymentStatus: 'paid',
+            deliveryStatus: 'pending-pickup',
             trackingId: trackingId,
           },
         };
