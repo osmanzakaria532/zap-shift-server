@@ -220,14 +220,27 @@ async function run() {
 
     // Riders related apis will be added here
     app.get('/riders', async (req, res) => {
+      const { status, riderDistrict, workStatus } = req.query;
       const query = {};
-      if (req.query.status) {
-        query.status = req.query.status;
+      console.log('get route', req.query);
+
+      if (status) {
+        query.status = status;
+      }
+      if (riderDistrict) {
+        // query.riderDistrict = { $regex: `^${riderDistrict}$`, $options: 'i' };
+        query.riderDistrict = riderDistrict;
+      }
+      if (workStatus) {
+        query.workStatus = workStatus;
       }
 
       const options = { sort: { createdAt: -1 } };
       const cursor = ridersCollection.find(query, options);
       const result = await cursor.toArray();
+
+      console.log('get result ', result);
+
       res.send(result);
     });
 
@@ -257,7 +270,7 @@ async function run() {
       }
 
       const updatedDoc = {
-        $set: { status: status },
+        $set: { status: status, workStatus: 'available' },
       };
       const result = await ridersCollection.updateOne(query, updatedDoc);
 
@@ -342,6 +355,33 @@ async function run() {
       parcel.createdAt = new Date();
       const result = await parcelsCollection.insertOne(parcel);
       res.send(result);
+    });
+
+    app.patch('/parcels/:id', async (req, res) => {
+      const { parcelId, riderId, riderName, riderEmail } = req.body;
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+
+      const updatedDoc = {
+        $set: {
+          deliveryStatus: 'driver-assigned',
+          riderId: riderId,
+          riderName: riderName,
+          riderEmail: riderEmail,
+        },
+      };
+
+      const result = await parcelsCollection.updateOne(query, updatedDoc);
+
+      // Also update rider information
+      const riderQuery = { _id: new ObjectId(riderId) };
+      const riderUpdatedDoc = {
+        $set: {
+          workStatus: 'in-delivery',
+        },
+      };
+      const riderResult = await ridersCollection.updateOne(riderQuery, riderUpdatedDoc);
+      res.send(riderResult);
     });
 
     app.delete('/parcels/:id', async (req, res) => {
