@@ -13,7 +13,10 @@ app.use(cors());
 
 // Firebase Admin SDK Initialization
 const admin = require('firebase-admin');
-const serviceAccount = require('./zap-shift-authentication-adminsdk.json');
+// const serviceAccount = require('./zap-shift-authentication-adminsdk.json');
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8');
+const serviceAccount = JSON.parse(decoded);
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
@@ -81,6 +84,15 @@ async function run() {
       const query = { email: email };
       const user = await userCollection.findOne(query);
       if (!user || user?.role !== 'admin') {
+        return res.status(403).send({ message: 'forbidden access' });
+      }
+      next();
+    };
+    const verifyRider = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      if (!user || user?.role !== 'rider') {
         return res.status(403).send({ message: 'forbidden access' });
       }
       next();
@@ -628,8 +640,8 @@ async function run() {
     });
 
     // Send a ping to confirm a successful connection
-    await client.db('admin').command({ ping: 1 });
-    console.log('Pinged your deployment. You successfully connected to MongoDB!');
+    // await client.db('admin').command({ ping: 1 });
+    // console.log('Pinged your deployment. You successfully connected to MongoDB!');
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
